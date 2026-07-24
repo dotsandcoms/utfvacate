@@ -202,19 +202,70 @@ export function computeBalancesBcea(
   return balances;
 }
 
+/** Estimated cost of one working day for an employee (placeholder until payroll). */
+export function employeeDailyCost(emp: Employee | undefined): number {
+  return emp?.dailyCostR ?? config.avgDailyCostR;
+}
+
+/** Rand value of one employee's accrued-but-untaken annual leave. */
+export function employeeAnnualLiabilityR(
+  emp: Employee,
+  balances: LeaveBalance[]
+): number {
+  const annual = balances.find(
+    (b) => b.employeeId === emp.id && b.type === "Annual"
+  );
+  const remaining = annual?.remaining ?? 0;
+  if (remaining <= 0) return 0;
+  return remaining * employeeDailyCost(emp);
+}
+
 /** Rand value of accrued-but-untaken annual leave across the company. */
 export function leaveLiabilityR(
   employees: Employee[],
   balances: LeaveBalance[]
 ): number {
+  return employees.reduce(
+    (sum, emp) => sum + employeeAnnualLiabilityR(emp, balances),
+    0
+  );
+}
+
+/**
+ * Estimated Rand cost of leave taken YTD for one employee (or all if empId omitted).
+ * Counts Approved / Pending Sync / Exported / Awaiting Approval — excludes Cancelled & Rejected.
+ */
+export function ytdLeaveCostR(
+  requests: LeaveRequest[],
+  employees: Employee[],
+  year: string,
+  empId?: string
+): number {
   const byId = Object.fromEntries(employees.map((e) => [e.id, e]));
-  return balances
-    .filter((b) => b.type === "Annual" && b.remaining > 0)
+  return requests
+    .filter(
+      (r) =>
+        r.status !== "Cancelled" &&
+        r.status !== "Rejected" &&
+        r.startDate.startsWith(year) &&
+        (empId ? r.employeeId === empId : true)
+    )
     .reduce(
-      (sum, b) =>
-        sum +
-        b.remaining *
-          (byId[b.employeeId]?.dailyCostR ?? config.avgDailyCostR),
+      (sum, r) => sum + r.days * employeeDailyCost(byId[r.employeeId]),
+      0
+    );
+}
+
+/** Estimated Rand cost of requests awaiting payroll export (Approved). */
+export function payrollQueueCostR(
+  requests: LeaveRequest[],
+  employees: Employee[]
+): number {
+  const byId = Object.fromEntries(employees.map((e) => [e.id, e]));
+  return requests
+    .filter((r) => r.status === "Approved")
+    .reduce(
+      (sum, r) => sum + r.days * employeeDailyCost(byId[r.employeeId]),
       0
     );
 }

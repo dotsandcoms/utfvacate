@@ -12,6 +12,13 @@ import {
   getLeaveRequests,
   activeSource,
 } from "@/lib/data";
+import {
+  employeeAnnualLiabilityR,
+  formatRand,
+  leaveLiabilityR,
+  payrollQueueCostR,
+  ytdLeaveCostR,
+} from "@/lib/balances";
 import { statusStyles } from "@/lib/utils";
 import { config } from "@/lib/config";
 import {
@@ -146,6 +153,27 @@ export default async function DashboardPage({
   ];
 
   const isLive = activeSource !== "mock";
+  const year = today.slice(0, 4);
+  const accruedLiability = leaveLiabilityR(employees, balances);
+  const ytdCost = ytdLeaveCostR(requests, employees, year);
+  const payrollCost = payrollQueueCostR(pendingSync, employees);
+  const topLiability = employees
+    .map((emp) => {
+      const annual = balances.find(
+        (b) => b.employeeId === emp.id && b.type === "Annual"
+      );
+      const liability = employeeAnnualLiabilityR(emp, balances);
+      return {
+        employeeId: emp.id,
+        name: emp.name,
+        remaining: annual?.remaining ?? 0,
+        liability,
+      };
+    })
+    .filter((r) => r.liability > 0)
+    .sort((a, b) => b.liability - a.liability)
+    .slice(0, 8);
+  const costDisclaimer = `Estimated · avg ${formatRand(config.avgDailyCostR)}/day until payroll salaries import`;
 
   return (
     <div className="space-y-6">
@@ -226,6 +254,81 @@ export default async function DashboardPage({
           })}
         </div>
       </div>
+
+      <section className="panel panel-pad">
+        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="section-title">Finance (estimated)</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Cost-to-company of leave — directional only
+            </p>
+          </div>
+          <p className="text-[11px] text-slate-400">{costDisclaimer}</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-100 bg-white/50 px-4 py-3">
+            <div className="stat-label">Accrued annual liability</div>
+            <div className="stat-value mt-1">{formatRand(accruedLiability)}</div>
+            <p className="mt-1 text-xs text-slate-400">
+              Untaken annual days × day rate
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white/50 px-4 py-3">
+            <div className="stat-label">YTD leave cost</div>
+            <div className="stat-value mt-1">{formatRand(ytdCost)}</div>
+            <p className="mt-1 text-xs text-slate-400">
+              {daysYtd} leave days taken in {year}
+            </p>
+          </div>
+          <Link
+            href="/exports"
+            className="rounded-xl border border-slate-100 bg-white/50 px-4 py-3 transition-colors hover:bg-slate-50/80"
+          >
+            <div className="stat-label">Awaiting payroll</div>
+            <div className="stat-value mt-1">{formatRand(payrollCost)}</div>
+            <p className="mt-1 text-xs text-slate-400">
+              {pendingSync.length} approved request
+              {pendingSync.length === 1 ? "" : "s"} in queue
+            </p>
+          </Link>
+        </div>
+        {topLiability.length > 0 && (
+          <div className="mt-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Highest accrued liability
+            </h3>
+            <ul className="mt-2 divide-y divide-slate-100">
+              {topLiability.map((row) => (
+                <li
+                  key={row.employeeId}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar name={row.name} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        <Link
+                          href={`/employee/${row.employeeId}`}
+                          className="hover:text-brand-600 hover:underline"
+                        >
+                          {row.name}
+                        </Link>
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {row.remaining} annual day
+                        {row.remaining === 1 ? "" : "s"} left
+                      </p>
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-sm font-medium text-ink-800">
+                    {formatRand(row.liability)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">

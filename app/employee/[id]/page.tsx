@@ -1,5 +1,9 @@
 import { notFound } from "next/navigation";
 import EmployeeProfileView from "@/components/EmployeeProfileView";
+import {
+  employeeAnnualLiabilityR,
+  ytdLeaveCostR,
+} from "@/lib/balances";
 import { computeBalances, getEmployees, getLeaveRequests } from "@/lib/data";
 import { todayIso } from "@/lib/holidays";
 import { config } from "@/lib/config";
@@ -16,7 +20,9 @@ export default async function EmployeeProfilePage({
     getLeaveRequests(),
   ]);
 
-  const employee = employees.find((e) => e.id === params.id);
+  const employee =
+    employees.find((e) => e.id === params.id) ??
+    employees.find((e) => e.employeeNo === params.id);
   if (!employee) notFound();
 
   const balances = computeBalances(employees, requests).filter(
@@ -44,6 +50,13 @@ export default async function EmployeeProfilePage({
   const upcoming = active
     .filter((r) => r.endDate >= today)
     .sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
+  const accruedLiabilityR = employeeAnnualLiabilityR(employee, balances);
+  const ytdCostR = ytdLeaveCostR(
+    history,
+    employees,
+    today.slice(0, 4),
+    employee.id
+  );
 
   return (
     <EmployeeProfileView
@@ -57,6 +70,9 @@ export default async function EmployeeProfilePage({
       annualEntitled={annual?.entitled ?? null}
       onLeaveNow={onLeaveNow}
       upcoming={upcoming}
+      accruedLiabilityR={accruedLiabilityR}
+      ytdCostR={ytdCostR}
+      avgDailyCostR={config.avgDailyCostR}
     />
   );
 }
